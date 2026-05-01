@@ -22,10 +22,19 @@ except ImportError:
 
 START_DATE = "2015-01-01"
 
-# 백테스트 결과에 따라 고정한 비중
-WEIGHT_6M_RETURN = 0.40
-WEIGHT_3M_RETURN = 0.30
-WEIGHT_6M_SHARPE = 0.30
+# =====================================================
+# 전략 비중: 8지표 최적화 결과
+# =====================================================
+
+WEIGHT_1M_RETURN = 0.00
+WEIGHT_3M_RETURN = 0.00
+WEIGHT_6M_RETURN = 0.55
+WEIGHT_9M_RETURN = 0.05
+WEIGHT_12M_RETURN = 0.10
+
+WEIGHT_6M_SHARPE = 0.10
+WEIGHT_9M_SHARPE = 0.10
+WEIGHT_12M_SHARPE = 0.10
 
 TOP_N = 3
 
@@ -332,12 +341,12 @@ def rank_score(df: pd.DataFrame) -> pd.DataFrame:
 
 def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
     """
-    최신 완성 월말 기준으로 6개월 수익률, 3개월 수익률,
-    6개월 샤프지수 점수를 계산하고 전체 10개 자산을 평가한다.
+    최신 완성 월말 기준으로 1/3/6/9/12개월 수익률,
+    6/9/12개월 샤프지수 점수를 계산하고 전체 10개 자산을 평가한다.
     """
     expected_assets = list(ASSETS.keys())
 
-    # 혹시 일부 자산 컬럼이 누락되었는지 먼저 확인
+    # 누락 자산 확인
     missing_assets = [a for a in expected_assets if a not in prices_krw.columns]
     if missing_assets:
         raise ValueError(f"가격 데이터에 누락된 자산이 있습니다: {missing_assets}")
@@ -353,25 +362,44 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
     # SGOV 원화 월간 수익률을 무위험수익률 프록시로 사용
     rf = returns["SGOV"].copy()
 
-    r6 = calc_cumulative_return(returns, 6)
+    # 수익률 지표
+    r1 = calc_cumulative_return(returns, 1)
     r3 = calc_cumulative_return(returns, 3)
-    sharpe6 = calc_rolling_sharpe(returns, rf, 6)
+    r6 = calc_cumulative_return(returns, 6)
+    r9 = calc_cumulative_return(returns, 9)
+    r12 = calc_cumulative_return(returns, 12)
 
-    score_r6 = rank_score(r6)
+    # 샤프지수 지표
+    sharpe6 = calc_rolling_sharpe(returns, rf, 6)
+    sharpe9 = calc_rolling_sharpe(returns, rf, 9)
+    sharpe12 = calc_rolling_sharpe(returns, rf, 12)
+
+    # 순위 점수
+    score_r1 = rank_score(r1)
     score_r3 = rank_score(r3)
+    score_r6 = rank_score(r6)
+    score_r9 = rank_score(r9)
+    score_r12 = rank_score(r12)
+
     score_sharpe6 = rank_score(sharpe6)
+    score_sharpe9 = rank_score(sharpe9)
+    score_sharpe12 = rank_score(sharpe12)
 
     total_score = (
-        WEIGHT_6M_RETURN * score_r6
+        WEIGHT_1M_RETURN * score_r1
         + WEIGHT_3M_RETURN * score_r3
+        + WEIGHT_6M_RETURN * score_r6
+        + WEIGHT_9M_RETURN * score_r9
+        + WEIGHT_12M_RETURN * score_r12
         + WEIGHT_6M_SHARPE * score_sharpe6
+        + WEIGHT_9M_SHARPE * score_sharpe9
+        + WEIGHT_12M_SHARPE * score_sharpe12
     )
 
     # 10개 자산 모두 점수가 존재하는 마지막 월을 신호 기준일로 사용
     complete_rows = total_score.dropna(how="any")
 
     if complete_rows.empty:
-    # 디버깅용: 가장 최근 월의 NaN 자산 확인
         last_date = total_score.index[-1]
         nan_assets = total_score.loc[last_date][total_score.loc[last_date].isna()].index.tolist()
 
@@ -379,15 +407,14 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
             "10개 자산 모두에 대해 유효한 점수를 계산할 수 있는 월이 없습니다.\n"
             f"가장 최근 확인 월: {last_date.strftime('%Y-%m-%d')}\n"
             f"점수가 없는 자산: {nan_assets}\n"
-            "가능한 원인: SGOV의 샤프지수 계산 불능, 특정 ETF 데이터 누락, "
-            "또는 아직 끝나지 않은 월 데이터 혼입."
+            "가능한 원인: 특정 ETF 데이터 누락, 아직 끝나지 않은 월 데이터 혼입, "
+            "또는 12개월 지표 계산에 필요한 데이터 부족."
         )
 
     latest_signal_date = complete_rows.index[-1]
 
     latest_scores = total_score.loc[latest_signal_date, expected_assets]
 
-    # 방어적 확인
     if latest_scores.isna().any():
         na_assets = latest_scores[latest_scores.isna()].index.tolist()
         raise ValueError(f"최신 신호 기준일에 점수가 없는 자산이 있습니다: {na_assets}")
@@ -396,12 +423,26 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
         "asset": expected_assets,
         "name": [ASSETS[a]["name"] for a in expected_assets],
         "score_total": latest_scores.values,
-        "score_6m_return": score_r6.loc[latest_signal_date, expected_assets].values,
+
+        "score_1m_return": score_r1.loc[latest_signal_date, expected_assets].values,
         "score_3m_return": score_r3.loc[latest_signal_date, expected_assets].values,
+        "score_6m_return": score_r6.loc[latest_signal_date, expected_assets].values,
+        "score_9m_return": score_r9.loc[latest_signal_date, expected_assets].values,
+        "score_12m_return": score_r12.loc[latest_signal_date, expected_assets].values,
+
         "score_6m_sharpe": score_sharpe6.loc[latest_signal_date, expected_assets].values,
-        "return_6m": r6.loc[latest_signal_date, expected_assets].values,
+        "score_9m_sharpe": score_sharpe9.loc[latest_signal_date, expected_assets].values,
+        "score_12m_sharpe": score_sharpe12.loc[latest_signal_date, expected_assets].values,
+
+        "return_1m": r1.loc[latest_signal_date, expected_assets].values,
         "return_3m": r3.loc[latest_signal_date, expected_assets].values,
+        "return_6m": r6.loc[latest_signal_date, expected_assets].values,
+        "return_9m": r9.loc[latest_signal_date, expected_assets].values,
+        "return_12m": r12.loc[latest_signal_date, expected_assets].values,
+
         "sharpe_6m": sharpe6.loc[latest_signal_date, expected_assets].values,
+        "sharpe_9m": sharpe9.loc[latest_signal_date, expected_assets].values,
+        "sharpe_12m": sharpe12.loc[latest_signal_date, expected_assets].values,
     })
 
     detail = detail.sort_values("score_total", ascending=False).reset_index(drop=True)
@@ -413,12 +454,26 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
             "asset",
             "name",
             "score_total",
-            "score_6m_return",
+
+            "score_1m_return",
             "score_3m_return",
+            "score_6m_return",
+            "score_9m_return",
+            "score_12m_return",
+
             "score_6m_sharpe",
-            "return_6m",
+            "score_9m_sharpe",
+            "score_12m_sharpe",
+
+            "return_1m",
             "return_3m",
+            "return_6m",
+            "return_9m",
+            "return_12m",
+
             "sharpe_6m",
+            "sharpe_9m",
+            "sharpe_12m",
         ]
     ]
 
@@ -458,10 +513,15 @@ def build_message(signal: dict) -> str:
     lines.append("")
     lines.append(f"신호 기준일: {signal_date.strftime('%Y-%m-%d')}")
     lines.append("")
-    lines.append("고정 비중:")
-    lines.append(f"- 6개월 수익률: {int(WEIGHT_6M_RETURN * 100)}%")
+    lines.append("전략 비중:")
+    lines.append(f"- 1개월 수익률: {int(WEIGHT_1M_RETURN * 100)}%")
     lines.append(f"- 3개월 수익률: {int(WEIGHT_3M_RETURN * 100)}%")
+    lines.append(f"- 6개월 수익률: {int(WEIGHT_6M_RETURN * 100)}%")
+    lines.append(f"- 9개월 수익률: {int(WEIGHT_9M_RETURN * 100)}%")
+    lines.append(f"- 12개월 수익률: {int(WEIGHT_12M_RETURN * 100)}%")
     lines.append(f"- 6개월 샤프지수: {int(WEIGHT_6M_SHARPE * 100)}%")
+    lines.append(f"- 9개월 샤프지수: {int(WEIGHT_9M_SHARPE * 100)}%")
+    lines.append(f"- 12개월 샤프지수: {int(WEIGHT_12M_SHARPE * 100)}%")
     lines.append("")
     lines.append("평가 결과 :")
     lines.append("")
@@ -474,9 +534,14 @@ def build_message(signal: dict) -> str:
 
         lines.append(f"{rank}. {asset} | {name}")
         lines.append(f">> 총점 : {score:.2f}")
-        lines.append(f"* 6M : {format_pct(row['return_6m'])}")
+        lines.append(f"* 1M : {format_pct(row['return_1m'])}")
         lines.append(f"* 3M : {format_pct(row['return_3m'])}")
+        lines.append(f"* 6M : {format_pct(row['return_6m'])}")
+        lines.append(f"* 9M : {format_pct(row['return_9m'])}")
+        lines.append(f"* 12M : {format_pct(row['return_12m'])}")
         lines.append(f"* Sharpe6M : {format_float(row['sharpe_6m'])}")
+        lines.append(f"* Sharpe9M : {format_float(row['sharpe_9m'])}")
+        lines.append(f"* Sharpe12M : {format_float(row['sharpe_12m'])}")
         lines.append("")
 
     lines.append("권장 비중: 상위 3개 균등비중")
