@@ -33,4 +33,4 @@ jobs:
 
       - name: Run dual momentum alert
         run: |
-          python monthly_dual_momentum_alert.py
+          python monthly_dual_momentum_alert.py --force
