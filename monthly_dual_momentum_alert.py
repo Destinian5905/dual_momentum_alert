@@ -23,18 +23,21 @@ except ImportError:
 START_DATE = "2015-01-01"
 
 # =====================================================
-# 전략 비중: 8지표 최적화 결과
+# 전략 비중: 1999.01~2026.04 장기 프록시 최적화 결과
 # =====================================================
 
-WEIGHT_1M_RETURN = 0.00
-WEIGHT_3M_RETURN = 0.00
-WEIGHT_6M_RETURN = 0.55
-WEIGHT_9M_RETURN = 0.05
-WEIGHT_12M_RETURN = 0.10
+WEIGHT_1M_RETURN = 0.15
+WEIGHT_3M_RETURN = 0.15
+WEIGHT_6M_RETURN = 0.40
+WEIGHT_9M_RETURN = 0.00
+WEIGHT_12M_RETURN = 0.05
 
-WEIGHT_6M_SHARPE = 0.10
-WEIGHT_9M_SHARPE = 0.10
-WEIGHT_12M_SHARPE = 0.10
+WEIGHT_6M_SHARPE = 0.00
+WEIGHT_9M_SHARPE = 0.05
+WEIGHT_12M_SHARPE = 0.05
+
+WEIGHT_9M_SORTINO = 0.10
+WEIGHT_12M_SORTINO = 0.05
 
 TOP_N = 3
 
@@ -313,16 +316,42 @@ def calc_rolling_sharpe(
     std = excess.rolling(window).std()
 
     sharpe = mean / std
-
-    # inf, -inf 제거
     sharpe = sharpe.replace([np.inf, -np.inf], np.nan)
 
-    # 표준편차가 0에 가까운 경우: 샤프지수 계산 불능
-    # 대표적으로 SGOV - SGOV = 0인 경우
     zero_std_mask = std.abs() < 1e-12
     sharpe = sharpe.mask(zero_std_mask, 0.0)
 
     return sharpe
+
+
+def calc_rolling_sortino(
+    returns: pd.DataFrame,
+    rf_monthly: pd.Series,
+    window: int = 12,
+) -> pd.DataFrame:
+    """
+    최근 n개월 소르티노 지수.
+    초과수익률 중 음수 구간만 하락위험으로 계산한다.
+
+    Sortino = 평균 초과수익률 / 하락편차
+
+    하락편차가 0이면 계산 불능이므로 0으로 처리한다.
+    """
+    excess = returns.sub(rf_monthly, axis=0)
+
+    downside = excess.copy()
+    downside[downside > 0] = 0.0
+
+    mean_excess = excess.rolling(window).mean()
+    downside_deviation = np.sqrt((downside ** 2).rolling(window).mean())
+
+    sortino = mean_excess / downside_deviation
+    sortino = sortino.replace([np.inf, -np.inf], np.nan)
+
+    zero_downside_mask = downside_deviation.abs() < 1e-12
+    sortino = sortino.mask(zero_downside_mask, 0.0)
+
+    return sortino
 
 
 def rank_score(df: pd.DataFrame) -> pd.DataFrame:
@@ -342,39 +371,49 @@ def rank_score(df: pd.DataFrame) -> pd.DataFrame:
 def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
     """
     최신 완성 월말 기준으로 1/3/6/9/12개월 수익률,
-    6/9/12개월 샤프지수 점수를 계산하고 전체 10개 자산을 평가한다.
+    6/9/12개월 샤프지수,
+    9/12개월 소르티노 지수를 계산하고 전체 10개 자산을 평가한다.
     """
     expected_assets = list(ASSETS.keys())
 
-    # 누락 자산 확인
     missing_assets = [a for a in expected_assets if a not in prices_krw.columns]
     if missing_assets:
         raise ValueError(f"가격 데이터에 누락된 자산이 있습니다: {missing_assets}")
 
-    # 자산 순서 고정
     prices_krw = prices_krw[expected_assets].copy()
-
     returns = calc_monthly_returns(prices_krw)
 
     if "SGOV" not in returns.columns:
         raise ValueError("SGOV가 없어서 무위험수익률 프록시를 만들 수 없습니다.")
 
-    # SGOV 원화 월간 수익률을 무위험수익률 프록시로 사용
+    # 현재 운용 코드에서는 SGOV 원화 월간 수익률을 무위험수익률 프록시로 사용
     rf = returns["SGOV"].copy()
 
-    # 수익률 지표
+    # -------------------------------------------------
+    # 1. 수익률 지표
+    # -------------------------------------------------
     r1 = calc_cumulative_return(returns, 1)
     r3 = calc_cumulative_return(returns, 3)
     r6 = calc_cumulative_return(returns, 6)
     r9 = calc_cumulative_return(returns, 9)
     r12 = calc_cumulative_return(returns, 12)
 
-    # 샤프지수 지표
+    # -------------------------------------------------
+    # 2. 샤프지수
+    # -------------------------------------------------
     sharpe6 = calc_rolling_sharpe(returns, rf, 6)
     sharpe9 = calc_rolling_sharpe(returns, rf, 9)
     sharpe12 = calc_rolling_sharpe(returns, rf, 12)
 
-    # 순위 점수
+    # -------------------------------------------------
+    # 3. 소르티노 지수
+    # -------------------------------------------------
+    sortino9 = calc_rolling_sortino(returns, rf, 9)
+    sortino12 = calc_rolling_sortino(returns, rf, 12)
+
+    # -------------------------------------------------
+    # 4. 순위 점수화
+    # -------------------------------------------------
     score_r1 = rank_score(r1)
     score_r3 = rank_score(r3)
     score_r6 = rank_score(r6)
@@ -385,6 +424,12 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
     score_sharpe9 = rank_score(sharpe9)
     score_sharpe12 = rank_score(sharpe12)
 
+    score_sortino9 = rank_score(sortino9)
+    score_sortino12 = rank_score(sortino12)
+
+    # -------------------------------------------------
+    # 5. 최종 점수
+    # -------------------------------------------------
     total_score = (
         WEIGHT_1M_RETURN * score_r1
         + WEIGHT_3M_RETURN * score_r3
@@ -394,6 +439,8 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
         + WEIGHT_6M_SHARPE * score_sharpe6
         + WEIGHT_9M_SHARPE * score_sharpe9
         + WEIGHT_12M_SHARPE * score_sharpe12
+        + WEIGHT_9M_SORTINO * score_sortino9
+        + WEIGHT_12M_SORTINO * score_sortino12
     )
 
     # 10개 자산 모두 점수가 존재하는 마지막 월을 신호 기준일로 사용
@@ -412,7 +459,6 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
         )
 
     latest_signal_date = complete_rows.index[-1]
-
     latest_scores = total_score.loc[latest_signal_date, expected_assets]
 
     if latest_scores.isna().any():
@@ -434,6 +480,9 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
         "score_9m_sharpe": score_sharpe9.loc[latest_signal_date, expected_assets].values,
         "score_12m_sharpe": score_sharpe12.loc[latest_signal_date, expected_assets].values,
 
+        "score_9m_sortino": score_sortino9.loc[latest_signal_date, expected_assets].values,
+        "score_12m_sortino": score_sortino12.loc[latest_signal_date, expected_assets].values,
+
         "return_1m": r1.loc[latest_signal_date, expected_assets].values,
         "return_3m": r3.loc[latest_signal_date, expected_assets].values,
         "return_6m": r6.loc[latest_signal_date, expected_assets].values,
@@ -443,6 +492,9 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
         "sharpe_6m": sharpe6.loc[latest_signal_date, expected_assets].values,
         "sharpe_9m": sharpe9.loc[latest_signal_date, expected_assets].values,
         "sharpe_12m": sharpe12.loc[latest_signal_date, expected_assets].values,
+
+        "sortino_9m": sortino9.loc[latest_signal_date, expected_assets].values,
+        "sortino_12m": sortino12.loc[latest_signal_date, expected_assets].values,
     })
 
     detail = detail.sort_values("score_total", ascending=False).reset_index(drop=True)
@@ -465,6 +517,9 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
             "score_9m_sharpe",
             "score_12m_sharpe",
 
+            "score_9m_sortino",
+            "score_12m_sortino",
+
             "return_1m",
             "return_3m",
             "return_6m",
@@ -474,6 +529,9 @@ def calc_latest_signal(prices_krw: pd.DataFrame) -> dict:
             "sharpe_6m",
             "sharpe_9m",
             "sharpe_12m",
+
+            "sortino_9m",
+            "sortino_12m",
         ]
     ]
 
@@ -522,6 +580,8 @@ def build_message(signal: dict) -> str:
     lines.append(f"- 6개월 샤프지수: {int(WEIGHT_6M_SHARPE * 100)}%")
     lines.append(f"- 9개월 샤프지수: {int(WEIGHT_9M_SHARPE * 100)}%")
     lines.append(f"- 12개월 샤프지수: {int(WEIGHT_12M_SHARPE * 100)}%")
+    lines.append(f"- 9개월 소르티노 지수: {int(WEIGHT_9M_SORTINO * 100)}%")
+    lines.append(f"- 12개월 소르티노 지수: {int(WEIGHT_12M_SORTINO * 100)}%")
     lines.append("")
     lines.append("평가 결과 :")
     lines.append("")
@@ -542,6 +602,8 @@ def build_message(signal: dict) -> str:
         lines.append(f"* Sharpe6M : {format_float(row['sharpe_6m'])}")
         lines.append(f"* Sharpe9M : {format_float(row['sharpe_9m'])}")
         lines.append(f"* Sharpe12M : {format_float(row['sharpe_12m'])}")
+        lines.append(f"* Sortino9M : {format_float(row['sortino_9m'])}")
+        lines.append(f"* Sortino12M : {format_float(row['sortino_12m'])}")
         lines.append("")
 
     lines.append("권장 비중: 상위 3개 균등비중")
