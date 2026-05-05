@@ -1,0 +1,46 @@
+{
+  "start_date": "2015-01-01",
+  "backtest_start_date": "1999-01-01",
+  "top_n": 3,
+  "risk_free_asset": "SGOV",
+  "backtest": {
+    "enabled": true,
+    "top_n_options": [1, 2, 3]
+  },
+  "criteria": [
+    { "id": "return_1m", "weight": 0.15, "enabled": true },
+    { "id": "return_3m", "weight": 0.15, "enabled": true },
+    { "id": "return_6m", "weight": 0.40, "enabled": true },
+    { "id": "return_9m", "weight": 0.00, "enabled": false },
+    { "id": "return_12m", "weight": 0.05, "enabled": true },
+    { "id": "sharpe_6m", "weight": 0.00, "enabled": false },
+    { "id": "sharpe_9m", "weight": 0.05, "enabled": true },
+    { "id": "sharpe_12m", "weight": 0.05, "enabled": true },
+    { "id": "sortino_6m", "weight": 0.00, "enabled": false },
+    { "id": "sortino_9m", "weight": 0.10, "enabled": true },
+    { "id": "sortino_12m", "weight": 0.05, "enabled": true },
+    { "id": "mdd_3m", "weight": 0.00, "enabled": false },
+    { "id": "mdd_6m", "weight": 0.00, "enabled": false },
+    { "id": "mdd_9m", "weight": 0.00, "enabled": false },
+    { "id": "mdd_12m", "weight": 0.00, "enabled": false }
+  ],
+  "assets": [
+    { "key": "SPY", "name": "SPY - S&P 500", "ticker": "SPY", "currency": "USD", "enabled": true },
+    { "key": "QQQ", "name": "QQQ - Nasdaq 100", "ticker": "QQQ", "currency": "USD", "enabled": true },
+    { "key": "VEA", "name": "VEA - Developed ex-US", "ticker": "VEA", "currency": "USD", "enabled": true },
+    { "key": "VWO", "name": "VWO - Emerging Markets", "ticker": "VWO", "currency": "USD", "enabled": true },
+    { "key": "KOREA", "name": "ACE 200 / KOSPI200 proxy", "ticker": "105190.KS", "currency": "KRW", "enabled": true },
+    { "key": "VGLT", "name": "VGLT - Long-term US Treasury", "ticker": "VGLT", "currency": "USD", "enabled": true },
+    { "key": "GLD", "name": "GLD - Gold proxy", "ticker": "GLD", "currency": "USD", "enabled": true },
+    { "key": "PDBC", "name": "PDBC - Commodities", "ticker": "PDBC", "currency": "USD", "enabled": true },
+    { "key": "UUP", "name": "UUP - US Dollar Index Bullish", "ticker": "UUP", "currency": "USD", "enabled": true },
+    { "key": "SGOV", "name": "SGOV - 0-3M US Treasury", "ticker": "SGOV", "currency": "USD", "enabled": true },
+    { "key": "TLT", "name": "TLT - 20+ Year US Treasury", "ticker": "TLT", "currency": "USD", "enabled": false },
+    { "key": "IEF", "name": "IEF - 7-10 Year US Treasury", "ticker": "IEF", "currency": "USD", "enabled": false },
+    { "key": "SLV", "name": "SLV - Silver proxy", "ticker": "SLV", "currency": "USD", "enabled": false },
+    { "key": "USO", "name": "USO - Oil proxy", "ticker": "USO", "currency": "USD", "enabled": false },
+    { "key": "EFA", "name": "EFA - Developed markets", "ticker": "EFA", "currency": "USD", "enabled": false },
+    { "key": "EWJ", "name": "EWJ - Japan", "ticker": "EWJ", "currency": "USD", "enabled": false },
+    { "key": "EWY", "name": "EWY - Korea", "ticker": "EWY", "currency": "USD", "enabled": false }
+  ]
+}
