@@ -67,9 +67,22 @@ Bot commands:
 - `/backtest`: latest signal with backtest recommendations
 - `/config`: current config summary
 - `/assets`: enabled asset list
+- `/asset TICKER`: add or remove one ticker after button confirmation
 - `/criteria`: enabled ranking criteria
 
 Only the chat id in `TELEGRAM_CHAT_ID` is allowed to run commands.
+
+Asset edits use `DUAL_MOMENTUM_CONFIG` or `dual_momentum_config.json`. The bot asks for confirmation before changing the file, and every approved change creates a timestamped `.bak` backup next to the config.
+
+Examples:
+
+```text
+/asset SGOV
+/asset GLD
+/asset 105190.KS
+```
+
+If the ticker is already active, the bot asks whether to remove it. If the ticker is missing or disabled, the bot checks Yahoo Finance data and asks whether to add it. Korean tickers ending in `.KS` or `.KQ` are added as `KRW`; other tickers are added as `USD`.
 
 Install on Ubuntu:
 
