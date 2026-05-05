@@ -55,3 +55,80 @@ Skip this section for faster manual runs:
 ```bash
 python monthly_dual_momentum_alert.py --force --no-send --skip-backtest
 ```
+
+## Telegram Command Bot On Oracle VPS
+
+The GitHub Actions monthly alert can stay as-is. For Telegram commands, run `telegram_bot.py` continuously on the VPS.
+
+Bot commands:
+
+- `/help` or `/start`: show commands
+- `/signal`: latest signal without backtest
+- `/backtest`: latest signal with backtest recommendations
+- `/config`: current config summary
+- `/assets`: enabled asset list
+- `/criteria`: enabled ranking criteria
+
+Only the chat id in `TELEGRAM_CHAT_ID` is allowed to run commands.
+
+Install on Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y git python3-venv python3-pip
+sudo mkdir -p /opt
+sudo chown ubuntu:ubuntu /opt
+cd /opt
+git clone https://github.com/Destinian5905/dual_momentum_alert.git dual_momentum_alert
+cd /opt/dual_momentum_alert
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+cp dual_momentum_config.example.json dual_momentum_config.json
+```
+
+Create the environment file:
+
+```bash
+sudo nano /etc/dual-momentum-alert.env
+```
+
+Example:
+
+```env
+TELEGRAM_BOT_TOKEN=123456:replace-me
+TELEGRAM_CHAT_ID=123456789
+DUAL_MOMENTUM_CONFIG=/opt/dual_momentum_alert/dual_momentum_config.json
+```
+
+Secure it:
+
+```bash
+sudo chmod 600 /etc/dual-momentum-alert.env
+```
+
+Install and start the systemd service:
+
+```bash
+sudo cp deploy/dual-momentum-bot.service /etc/systemd/system/dual-momentum-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now dual-momentum-bot
+```
+
+Check status and logs:
+
+```bash
+sudo systemctl status dual-momentum-bot
+journalctl -u dual-momentum-bot -f
+```
+
+Update after a new push:
+
+```bash
+cd /opt/dual_momentum_alert
+git pull origin main
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart dual-momentum-bot
+```

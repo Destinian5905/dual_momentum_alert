@@ -685,6 +685,44 @@ def save_output(signal: dict, backtest_results: list[dict] | None = None) -> Pat
     return output_file
 
 
+def generate_report_from_prices(
+    prices_krw: pd.DataFrame,
+    config: dict,
+    include_backtest: bool = True,
+    save_excel: bool = True,
+) -> dict:
+    signal = calc_latest_signal(prices_krw, config)
+    backtest_results = []
+
+    if include_backtest and config.get("backtest", {}).get("enabled", True):
+        backtest_results = evaluate_strategy_candidates(prices_krw, config)
+
+    output_file = save_output(signal, backtest_results) if save_excel else None
+    message = build_message(signal, backtest_results)
+
+    return {
+        "message": message,
+        "output_file": output_file,
+        "signal": signal,
+        "backtest_results": backtest_results,
+    }
+
+
+def generate_report(
+    config_path: str | None = None,
+    include_backtest: bool = True,
+    save_excel: bool = True,
+) -> dict:
+    config = load_config(config_path)
+    prices_krw, _ = build_monthly_prices_krw(config)
+    return generate_report_from_prices(
+        prices_krw,
+        config,
+        include_backtest=include_backtest,
+        save_excel=save_excel,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true", help="Run even when today is not the second Korean business day.")
@@ -698,17 +736,14 @@ def main():
         print(f"{today} is not the second Korean business day. Skipping.")
         return
 
-    config = load_config(args.config)
     print("Downloading data and calculating signal.")
-    prices_krw, _ = build_monthly_prices_krw(config)
-    signal = calc_latest_signal(prices_krw, config)
-
-    backtest_results = []
-    if config.get("backtest", {}).get("enabled", True) and not args.skip_backtest:
-        backtest_results = evaluate_strategy_candidates(prices_krw, config)
-
-    output_file = save_output(signal, backtest_results)
-    message = build_message(signal, backtest_results)
+    result = generate_report(
+        config_path=args.config,
+        include_backtest=not args.skip_backtest,
+        save_excel=True,
+    )
+    message = result["message"]
+    output_file = result["output_file"]
 
     print(message)
     print(f"\nExcel saved: {output_file}")

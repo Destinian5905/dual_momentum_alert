@@ -4,3 +4,4 @@ yfinance
 requests
 openpyxl
 holidays
+python-telegram-bot

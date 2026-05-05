@@ -1,0 +1,16 @@
+[Unit]
+Description=Dual Momentum Telegram Command Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/dual_momentum_alert
+EnvironmentFile=/etc/dual-momentum-alert.env
+ExecStart=/opt/dual_momentum_alert/.venv/bin/python /opt/dual_momentum_alert/telegram_bot.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -60,6 +60,27 @@ class ConfigurableMomentumTests(unittest.TestCase):
         self.assertEqual(recommendations["highest_risk_adjusted"]["strategy"], "B")
         self.assertEqual(recommendations["lowest_mdd"]["strategy"], "C")
 
+    def test_generate_report_can_skip_excel_save(self):
+        raw = {
+            "risk_free_asset": "SGOV",
+            "top_n": 1,
+            "assets": [
+                {"key": "SGOV", "name": "Cash", "ticker": "SGOV", "currency": "USD", "enabled": True},
+            ],
+            "criteria": [{"id": "return_1m", "weight": 1.0, "enabled": True}],
+        }
+        config = app.normalize_config(raw)
+        prices = pd.DataFrame(
+            {"SGOV": [100, 101, 102]},
+            index=pd.date_range("2024-01-31", periods=3, freq="ME"),
+        )
+
+        result = app.generate_report_from_prices(prices, config, include_backtest=False, save_excel=False)
+
+        self.assertIn("Dual Momentum Monthly Signal", result["message"])
+        self.assertIsNone(result["output_file"])
+        self.assertEqual(result["backtest_results"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
