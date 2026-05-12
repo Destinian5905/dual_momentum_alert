@@ -81,6 +81,30 @@ class ConfigurableMomentumTests(unittest.TestCase):
         self.assertIsNone(result["output_file"])
         self.assertEqual(result["backtest_results"], [])
 
+    def test_run_backtest_applies_ptp_withholding_tax(self):
+        prices = pd.DataFrame(
+            {
+                "PTP": [100, 110, 121],
+                "SAFE": [100, 100, 100],
+            },
+            index=pd.date_range("2024-01-31", periods=3, freq="ME"),
+        )
+        config = app.normalize_config(
+            {
+                "risk_free_asset": "SAFE",
+                "top_n": 1,
+                "assets": [
+                    {"key": "PTP", "name": "PTP", "ticker": "PTEST", "currency": "USD", "enabled": True},
+                    {"key": "SAFE", "name": "SAFE", "ticker": "SAFE", "currency": "USD", "enabled": True},
+                ],
+                "criteria": [{"id": "return_1m", "weight": 1.0, "enabled": True}],
+                "ptp_tickers": ["PTEST"],
+            }
+        )
+
+        result = app.run_backtest(prices, config, [{"id": "return_1m", "weight": 1.0}], 1, "test")
+        self.assertLess(result["monthly_returns"].iloc[-1], 0.1)
+
 
 if __name__ == "__main__":
     unittest.main()

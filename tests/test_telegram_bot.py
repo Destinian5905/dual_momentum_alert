@@ -58,6 +58,18 @@ class TelegramBotTests(unittest.TestCase):
 
         self.assertFalse(updated["assets"][0]["enabled"])
 
+    def test_set_asset_class_enabled_updates_matching_assets(self):
+        raw = {
+            "assets": [
+                {"key": "A", "ticker": "AAA", "asset_class": "EQ", "enabled": False},
+                {"key": "B", "ticker": "BBB", "asset_class": "FI", "enabled": True},
+            ],
+            "risk_free_asset": "B",
+            "top_n": 1,
+        }
+        updated = telegram_bot.set_asset_class_enabled(raw, "EQ", True)
+        self.assertTrue(updated["assets"][0]["enabled"])
+
     def test_write_config_creates_backup(self):
         path = Path("test_dual_momentum_config.json")
         backups = []
