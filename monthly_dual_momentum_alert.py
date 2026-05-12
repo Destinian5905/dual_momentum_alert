@@ -27,7 +27,7 @@ OUTPUT_DIR = Path("output")
 
 
 DEFAULT_ASSETS = [
-    {"key": "SPY", "name": "SPY - S&P 500", "ticker": "SPY", "currency": "USD", "enabled": True},
+    {"key": "SPY", "name": "SPY - S&P 500", "ticker": "SPY", "currency": "USD", "asset_class": "EQUITY_US", "enabled": True},
     {"key": "QQQ", "name": "QQQ - Nasdaq 100", "ticker": "QQQ", "currency": "USD", "enabled": True},
     {"key": "VEA", "name": "VEA - Developed ex-US", "ticker": "VEA", "currency": "USD", "enabled": True},
     {"key": "VWO", "name": "VWO - Emerging Markets", "ticker": "VWO", "currency": "USD", "enabled": True},
@@ -36,7 +36,7 @@ DEFAULT_ASSETS = [
     {"key": "GLD", "name": "GLD - Gold proxy", "ticker": "GLD", "currency": "USD", "enabled": True},
     {"key": "PDBC", "name": "PDBC - Commodities", "ticker": "PDBC", "currency": "USD", "enabled": True},
     {"key": "UUP", "name": "UUP - US Dollar Index Bullish", "ticker": "UUP", "currency": "USD", "enabled": True},
-    {"key": "SGOV", "name": "SGOV - 0-3M US Treasury", "ticker": "SGOV", "currency": "USD", "enabled": True},
+    {"key": "SGOV", "name": "SGOV - 0-3M US Treasury", "ticker": "SGOV", "currency": "USD", "asset_class": "BOND_SHORT", "enabled": True},
 ]
 
 CRITERIA_DEFINITIONS = {
@@ -106,6 +106,8 @@ def normalize_config(raw_config: dict | None = None) -> dict:
 
     if "criteria" in raw_config:
         config["criteria"] = raw_config["criteria"]
+    if "ptp_tickers" in raw_config:
+        config["ptp_tickers"] = raw_config["ptp_tickers"]
 
     assets = {}
     for asset in config["assets"]:
@@ -122,6 +124,7 @@ def normalize_config(raw_config: dict | None = None) -> dict:
             "name": str(asset.get("name", key)),
             "ticker": ticker,
             "currency": currency,
+            "asset_class": str(asset.get("asset_class", "UNCLASSIFIED")),
         }
 
     criteria = []
@@ -472,12 +475,18 @@ def run_backtest(prices_krw: pd.DataFrame, config: dict, criteria: list[dict], t
     shifted_scores = total_score.shift(1)
     strategy_returns = []
 
+    ptp_tickers = {str(x).upper() for x in config.get("ptp_tickers", [])}
     for signal_date, row in shifted_scores.iterrows():
         if row.isna().any() or signal_date not in returns.index:
             strategy_returns.append(np.nan)
             continue
         selected_assets = row.sort_values(ascending=False).head(top_n).index
-        strategy_returns.append(float(returns.loc[signal_date, selected_assets].mean()))
+        period_returns = returns.loc[signal_date, selected_assets].copy()
+        for asset_key in selected_assets:
+            ticker = str(config["assets"][asset_key].get("ticker", "")).upper()
+            if ticker in ptp_tickers:
+                period_returns.loc[asset_key] = ((1 + period_returns.loc[asset_key]) * 0.9) - 1
+        strategy_returns.append(float(period_returns.mean()))
 
     strategy_returns = pd.Series(strategy_returns, index=shifted_scores.index, name=name).dropna()
     start = pd.Timestamp(config["backtest_start_date"])

@@ -98,8 +98,29 @@ def build_asset_entry(ticker: str, name: str | None = None) -> dict:
         "name": name or ticker,
         "ticker": ticker,
         "currency": infer_currency(ticker),
+        "asset_class": "UNCLASSIFIED",
         "enabled": True,
     }
+
+
+def normalize_asset_class(name: str) -> str:
+    value = name.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9_\-]+", value):
+        raise ValueError("Asset class may only include letters, numbers, underscore, hyphen.")
+    return value
+
+
+def set_asset_class_enabled(raw_config: dict, class_name: str, enabled: bool) -> dict:
+    updated = copy.deepcopy(raw_config)
+    class_name = normalize_asset_class(class_name)
+    touched = 0
+    for i, asset in enumerate(updated.get("assets", [])):
+        if normalize_asset_class(str(asset.get("asset_class", "UNCLASSIFIED"))) == class_name:
+            updated["assets"][i] = {**asset, "enabled": enabled}
+            touched += 1
+    if touched == 0:
+        raise ValueError(f"Asset class not found: {class_name}")
+    return repair_config_after_asset_change(updated)
 
 
 def asset_ticker(asset: dict) -> str:
@@ -224,6 +245,10 @@ def help_message() -> str:
             "/config - current config summary",
             "/assets - enabled asset list",
             "/asset TICKER - add or remove a ticker after confirmation",
+            "/include_class CLASS - enable all assets in class",
+            "/exclude_class CLASS - disable all assets in class",
+            "/include_asset CLASS TICKER - add/enable ticker in class",
+            "/exclude_asset CLASS TICKER - disable ticker in class",
             "/criteria - enabled ranking criteria",
             "/help - show this help",
         ]
@@ -395,6 +420,54 @@ async def backtest_command(update, context):
     await run_report_command(update, include_backtest=True)
 
 
+async def include_class_command(update, context):
+    if len(context.args) != 1:
+        await update.message.reply_text("Usage: /include_class CLASS")
+        return
+    config_path = editable_config_path()
+    raw = read_raw_config(config_path)
+    updated = set_asset_class_enabled(raw, context.args[0], True)
+    write_config_with_backup(config_path, updated)
+    await update.message.reply_text("Class enabled.")
+
+
+async def exclude_class_command(update, context):
+    if len(context.args) != 1:
+        await update.message.reply_text("Usage: /exclude_class CLASS")
+        return
+    config_path = editable_config_path()
+    raw = read_raw_config(config_path)
+    updated = set_asset_class_enabled(raw, context.args[0], False)
+    write_config_with_backup(config_path, updated)
+    await update.message.reply_text("Class disabled.")
+
+
+async def include_asset_command(update, context):
+    if len(context.args) != 2:
+        await update.message.reply_text("Usage: /include_asset CLASS TICKER")
+        return
+    class_name, ticker = normalize_asset_class(context.args[0]), normalize_ticker(context.args[1])
+    config_path = editable_config_path()
+    raw = read_raw_config(config_path)
+    entry = build_asset_entry(ticker, ticker)
+    entry["asset_class"] = class_name
+    updated = apply_asset_add(raw, entry)
+    write_config_with_backup(config_path, updated)
+    await update.message.reply_text(f"Asset included: {class_name} {ticker}")
+
+
+async def exclude_asset_command(update, context):
+    if len(context.args) != 2:
+        await update.message.reply_text("Usage: /exclude_asset CLASS TICKER")
+        return
+    _, ticker = normalize_asset_class(context.args[0]), normalize_ticker(context.args[1])
+    config_path = editable_config_path()
+    raw = read_raw_config(config_path)
+    updated = apply_asset_remove(raw, ticker)
+    write_config_with_backup(config_path, updated)
+    await update.message.reply_text(f"Asset disabled: {ticker}")
+
+
 def validate_environment(required_keys: Iterable[str] = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")):
     missing = [key for key in required_keys if not os.environ.get(key)]
     if missing:
@@ -413,6 +486,10 @@ def build_application():
     app.add_handler(CommandHandler("config", require_authorized(config_command)))
     app.add_handler(CommandHandler("assets", require_authorized(assets_command)))
     app.add_handler(CommandHandler("asset", require_authorized(asset_command)))
+    app.add_handler(CommandHandler("include_class", require_authorized(include_class_command)))
+    app.add_handler(CommandHandler("exclude_class", require_authorized(exclude_class_command)))
+    app.add_handler(CommandHandler("include_asset", require_authorized(include_asset_command)))
+    app.add_handler(CommandHandler("exclude_asset", require_authorized(exclude_asset_command)))
     app.add_handler(CommandHandler("criteria", require_authorized(criteria_command)))
     app.add_handler(CallbackQueryHandler(asset_callback, pattern=r"^asset:"))
     return app
